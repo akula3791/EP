@@ -1,100 +1,33 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Блог практикующего психолога</title>
-    <style>
-        /* Базовые стили для красивого блога */
-        body {
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f8f9fa;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        h1 {
-            text-align: center;
-            color: #2c3e50;
-            margin-bottom: 40px;
-        }
-        /* Стили для карточки поста */
-        .post-card {
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-            padding: 25px;
-            margin-bottom: 30px;
-            line-height: 1.6;
-        }
-        /* Стиль для картинок в посте */
-        .post-card img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            margin-top: 15px;
-            display: block;
-        }
-        .post-date {
-            font-size: 0.85rem;
-            color: #95a5a6;
-            margin-bottom: 15px;
-        }
-        /* Анимация загрузки */
-        #loader {
-            text-align: center;
-            font-size: 1.2rem;
-            color: #7f8c8d;
-            margin-top: 50px;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="container">
-        <h1>Посты психолога</h1>
-        
-        <!-- Сюда JavaScript будет вставлять мамины посты -->
-        <div id="blog-posts">
-            <div id="loader">Загрузка свежих публикаций...</div>
-        </div>
-    </div>
-
 <script>
-    // 1. ЗАМЕНИТЕ НА ЮЗЕРНЕЙМ МАМИНОГО КАНАЛА (без знака @ и ссылки t.me/)
+    // Название маминого канала
     const TELEGRAM_CHANNEL = 'Bagoveeva'; 
-
-    // Используем открытый API-мост для получения постов в формате JSON
-    const API_URL = `https://workers.dev{TELEGRAM_CHANNEL}`;
+    
+    // Используем самый стабильный официальный RSS-поток самого Телеграма через открытый конвертер
+    const API_URL = `https://rss2json.com{TELEGRAM_CHANNEL}`;
 
     async function loadTelegramPosts() {
         const postsContainer = document.getElementById('blog-posts');
         
         try {
             const response = await fetch(API_URL);
-            if (!response.ok) throw new Error('Ошибка сети');
+            if (!response.ok) throw new Error('Ошибка при получении данных');
             
-            const posts = await response.json();
-            
-            // Очищаем загрузчик
+            const data = await response.json();
             postsContainer.innerHTML = '';
 
-            if (posts.length === 0) {
-                postsContainer.innerHTML = '<p style="text-align:center">Постов пока нет.</p>';
+            // Проверяем, вернулись ли посты
+            if (!data.items || data.items.length === 0) {
+                postsContainer.innerHTML = '<p style="text-align:center">Публикаций пока нет.</p>';
                 return;
             }
 
-            // Перебираем каждый пост и создаем HTML структуру
-            posts.forEach(post => {
+            // Выводим последние посты
+            data.items.forEach(item => {
                 const postElement = document.createElement('article');
                 postElement.className = 'post-card';
 
-                // Форматируем дату (превращаем системное время в красивую дату)
-                const postDate = new Date(post.date * 1000).toLocaleDateString('ru-RU', {
+                // Форматируем дату публикации
+                const postDate = new Date(item.pubDate).toLocaleDateString('ru-RU', {
                     day: 'numeric',
                     month: 'long',
                     year: 'numeric',
@@ -102,33 +35,26 @@
                     minute: '2-digit'
                 });
 
-                // Обработка текста: заменяем переносы строк на теги <br>, чтобы текст не слипался
-                let formattedText = post.text ? post.text.replace(/\n/g, '<br>') : '';
-
-                // Собираем карточку поста
+                // Официальный RSS Телеграма отдает текст уже в красивом HTML (сохраняя смайлы и картинки)
                 let postContent = `
                     <div class="post-date">${postDate}</div>
-                    <div class="post-text">${formattedText}</div>
+                    <div class="post-text">${item.content}</div>
                 `;
-
-                // Если в посте есть картинка, добавляем её
-                if (post.image) {
-                    postContent += `<img src="${post.image}" alt="Иллюстрация к посту">`;
-                }
 
                 postElement.innerHTML = postContent;
                 postsContainer.appendChild(postElement);
             });
 
+            // Небольшой трюк: убираем лишние стили кнопок Telegram, если они подтянулись
+            const tgButtons = postsContainer.querySelectorAll('.tgme_widget_message_inline_attach');
+            tgButtons.forEach(btn => btn.style.display = 'none');
+
         } catch (error) {
-            console.error('Ошибка при загрузке постов:', error);
-            postsContainer.innerHTML = '<p style="text-align:center; color:red;">Не удалось загрузить посты. Пожалуйста, обновите страницу позже.</p>';
+            console.error('Ошибка загрузки:', error);
+            postsContainer.innerHTML = '<p style="text-align:center; color:#e74c3c;">Не удалось загрузить посты. Пожалуйста, перезагрузите страницу.</p>';
         }
     }
 
-    // Запускаем функцию при загрузке страницы
+    // Запуск при полной загрузке страницы
     window.addEventListener('DOMContentLoaded', loadTelegramPosts);
 </script>
-
-</body>
-</html>
