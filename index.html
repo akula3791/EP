@@ -23,7 +23,7 @@
             overflow-x: hidden;
         }
 
-        /* Шапка и Навигация */
+        /* Шапка и Навигация (Элитный полупрозрачный блюр) */
         header {
             background-color: rgba(252, 251, 250, 0.9);
             backdrop-filter: blur(10px);
@@ -99,7 +99,6 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
         /* РАЗДЕЛ: ЛЕНТА ЗАПИСЕЙ */
         .feed-title {
             font-family: 'Playfair Display', serif;
@@ -148,12 +147,6 @@
             line-height: 1.7;
             white-space: pre-wrap;
             word-break: break-word;
-        }
-
-        .post-text a {
-            color: #1c3d31;
-            text-decoration: underline;
-            font-weight: 500;
         }
 
         .post-img {
@@ -255,7 +248,6 @@
             font-weight: 500;
         }
 
-        /* Индикаторы загрузки и заглушки */
         .loading, .error-msg {
             text-align: center;
             padding: 60px 20px;
@@ -264,7 +256,6 @@
             font-weight: 500;
         }
 
-        /* Адаптивность под смартфоны */
         @media (max-width: 768px) {
             .nav-container { flex-direction: column; gap: 16px; padding: 16px; }
             .tab-content { margin-top: 140px; padding: 0 16px; }
@@ -286,7 +277,7 @@
         </div>
     </header>
 
-    <!-- РАЗДЕЛ 1: АВТОНОМНАЯ ЛЕНТА ЗАПИСЕЙ ИЗ ТГ -->
+    <!-- РАЗДЕЛ 1: АВТОНОМНАЯ ЛЕНТА ЗАПИСЕЙ -->
     <main id="feedTab" class="tab-content active">
         <h1 class="feed-title">Полезные заметки и мысли</h1>
         <div id="postsContainer" class="posts-container">
@@ -294,7 +285,7 @@
         </div>
     </main>
 
-    <!-- РАЗДЕЛ 2: ПОЛНАЯ КОНТАКТНАЯ ИНФОРМАЦИЯ -->
+    <!-- РАЗДЕЛ 2: КОНТАКТНАЯ ИНФОРМАЦИЯ -->
     <main id="contactsTab" class="tab-content">
         <div class="profile-section">
             <div class="profile-img-container">
@@ -320,3 +311,113 @@
             <a href="mailto:psy-mama@mail.ru" class="contact-card">
                 <span class="contact-icon">✉️</span>
                 <div class="contact-label">Эл. Почта</div>
+                <div class="contact-value">psy-mama@mail.ru</div>
+            </a>
+        </div>
+    </main>
+    <script>
+        // ИНИЦИАЛИЗАЦИЯ И ПЕРЕКЛЮЧЕНИЕ ТАБОВ
+        function initTabs() {
+            const btns = document.querySelectorAll(".tab-btn");
+            btns.forEach(btn => {
+                btn.onclick = () => {
+                    let tabId = btn.getAttribute("data-tab");
+                    btns.forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                    
+                    document.getElementById("feedTab").classList.remove("active");
+                    document.getElementById("contactsTab").classList.remove("active");
+                    document.getElementById(tabId + "Tab").classList.add("active");
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+            });
+        }
+
+        // АВТОНОМНЫЙ АПИ-ПАРАЛЛЕЛЬНЫЙ ЗАГРУЗЧИК ИЗ ТЕЛЕГРАМА
+        async function fetchTelegramPosts() {
+            // =========================================================================
+            // КРИТИЧЕСКИЙ НАСТРОЕЧНЫЙ ПУНКТ:
+            // Укажи здесь точный юзернейм публичного Telegram-канала мамы (БЕЗ знака @)
+            // =========================================================================
+            const channelName = "ИМЯ_КАНАЛА_МАМЫ"; 
+            
+            const container = document.getElementById("postsContainer");
+            
+            // Используем стабильный публичный мост для конвертации ленты в валидный JSON-формат
+            const rssUrl = `https://rsshub.app{channelName}`;
+            const apiTarget = `https://rss2json.com{encodeURIComponent(rssUrl)}`;
+
+            try {
+                const response = await fetch(apiTarget);
+                if (!response.ok) throw new Error("Сетевой сбой при чтении потока");
+                const data = await response.json();
+
+                if (!data.items || data.items.length === 0) {
+                    container.innerHTML = '<div class="error-msg">📝 В блоге пока нет записей или канал является приватным.</div>';
+                    return;
+                }
+
+                container.innerHTML = ""; // Мгновенно убираем индикатор загрузки
+
+                data.items.forEach(item => {
+                    const card = document.createElement("article");
+                    card.className = "post-card";
+
+                    // Форматируем красивую дату публикации по русским стандартам
+                    const pubDate = new Date(item.pubDate);
+                    const formatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+                    const dateStr = formatter.format(pubDate);
+
+                    let rawContent = item.content || item.description || "";
+                    
+                    // Поиск изображений (вытягиваем ссылку на первое медиа-вложение из Telegram)
+                    let imgHtml = "";
+                    const imgMatch = rawContent.match(/<img[^>]+src="([^">]+)"/);
+                    if (imgMatch && imgMatch[1]) {
+                        imgHtml = `<img src="${imgMatch[1]}" class="post-img" alt="Иллюстрация к записи" loading="lazy">`;
+                    }
+
+                    // Очищаем текст от тяжелых тегов, видеоплееров и сохраняем переносы строк абзацев
+                    let textOnly = rawContent
+                        .replace(/<img[^>]*>/g, "")
+                        .replace(/<video[^>]*>([\s\S]*?)<\/video>/g, "")
+                        .replace(/<br\s*\/?>/gi, "\n")
+                        .replace(/<\/?[^>]+(>|$)/g, "") // Стираем любые остаточные HTML-теги
+                        .trim();
+
+                    // Если в посте нет ни медиа, ни текста (например, пустая служебная ссылка), пропускаем его
+                    if (!textOnly && !imgHtml) return;
+
+                    card.innerHTML = `
+                        <span class="post-date">📅 ${dateStr}</span>
+                        ${imgHtml}
+                        <p class="post-text">${escapeHtml(textOnly)}</p>
+                    `;
+
+                    container.appendChild(card);
+                });
+
+            } catch (error) {
+                console.error("🔴 Ошибка синхронизации с Telegram:", error);
+                container.innerHTML = '<div class="error-msg">😢 Не удалось автоматически обновить ленту. Все свежие записи можно почитать напрямую в Telegram-канале.</div>';
+            }
+        }
+
+        // Встроенный валидатор вывода строк для полной безопасности верстки
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // ЗАПУСК СИСТЕМЫ ПРИ ЗАГРУЗКЕ DOM
+        document.addEventListener("DOMContentLoaded", () => {
+            initTabs();
+            fetchTelegramPosts();
+        });
+    </script>
+</body>
+</html>
