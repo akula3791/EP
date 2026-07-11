@@ -256,12 +256,32 @@
             font-weight: 500;
         }
 
+        /* Адаптивные стили для виджета Telegram */
+        .telegram-widget-wrapper {
+            background: #ffffff;
+            border-radius: 28px;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(44, 39, 36, 0.03);
+            border: 1px solid rgba(44, 39, 36, 0.04);
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 200px;
+        }
+
+        .telegram-widget-wrapper iframe {
+            width: 100% !important;
+            border-radius: 16px !important;
+        }
+
         @media (max-width: 768px) {
             .nav-container { flex-direction: column; gap: 16px; padding: 16px; }
             .tab-content { margin-top: 140px; padding: 0 16px; }
             .profile-section { flex-direction: column; text-align: center; padding: 30px 20px; gap: 24px; }
             .post-card { padding: 24px; }
             .feed-title { font-size: 2rem; }
+            .telegram-widget-wrapper { padding: 16px; border-radius: 20px; }
         }
     </style>
 </head>
@@ -277,11 +297,24 @@
         </div>
     </header>
 
-    <!-- РАЗДЕЛ 1: АВТОНОМНАЯ ЛЕНТА ЗАПИСЕЙ -->
-    <main id="feedTab" class="tab-content active">
+    <!-- РАЗДЕЛ 1: ОФИЦИАЛЬНАЯ И ВЕЧНО СТАБИЛЬНАЯ ЛЕНТА ЗАПИСЕЙ ИЗ ТГ -->
+    <main id="feedTab" class="tab-content active" style="max-width: 800px !important;">
         <h1 class="feed-title">Полезные заметки и мысли</h1>
-        <div id="postsContainer" class="posts-container">
-            <div class="loading">🪐 Синхронизация с Telegram-каналом...</div>
+        
+        <!-- Элитный контейнер-подложка для интеграции официального виджета Telegram -->
+        <div class="telegram-widget-wrapper">
+            
+            <!-- Официальный тег виджета Telegram. Настроен на 15 постов, светлую тему и максимальную ширину -->
+            <script async src="https://telegram.org/js/telegram-widget.js?22"
+                    data-telegram-discussion="Bagoveeva" 
+                    data-comments-limit="5"
+                    data-telegram-channel="Bagoveeva" 
+                    data-num="15" 
+                    data-width="100%"
+                    data-color="1c3d31"
+                    data-dark="0">
+            </script>
+            
         </div>
     </main>
 
@@ -298,7 +331,7 @@
         </div>
 
         <div class="contact-grid">
-            <a href="https://t.me" target="_blank" class="contact-card">
+            <a href="https://t.me/Bagoveeva" target="_blank" class="contact-card">
                 <span class="contact-icon">💬</span>
                 <div class="contact-label">Telegram Канал</div>
                 <div class="contact-value">Читать в TG</div>
@@ -315,6 +348,7 @@
             </a>
         </div>
     </main>
+
     <script>
         // ИНИЦИАЛИЗАЦИЯ И ПЕРЕКЛЮЧЕНИЕ ТАБОВ
         function initTabs() {
@@ -333,107 +367,9 @@
             });
         }
 
-        // АВТОНОМНЫЙ ПАРСЕР ЧЕРЕЗ ПЕРСОНАЛЬНЫЙ GOOGLE-ШЛЮЗ
-        async function fetchTelegramPosts() {
-            const channelName = "Bagoveeva"; 
-            const container = document.getElementById("postsContainer");
-            
-            // ПЕРСОНАЛЬНЫЙ GOOGLE-ШЛЮЗ
-            const googleScriptUrl = "https://script.google.com/macros/s/AKfycbw_9cfRTKi-RfIzSfut_XezWEm9TYm9KJ5C3FPCJ8d0Uh2GDecAV4JqO3piUVQOO3Lg2g/exec"; 
-            
-            const targetUrl = `${googleScriptUrl}?channel=${channelName}`;
-
-            try {
-                console.log("📡 Безопасная синхронизация через сервера Google...");
-                const response = await fetch(targetUrl);
-                if (!response.ok) throw new Error("Google сервер временно недоступен");
-                
-                const json = await response.json();
-                if (json.error) throw new Error(json.error);
-                
-                const htmlText = json.contents;
-
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(htmlText, "text/html");
-                
-                const tgPosts = doc.querySelectorAll(".tgme_widget_message_wrap");
-
-                if (!tgPosts || tgPosts.length === 0) {
-                    container.innerHTML = '<div class="error-msg">📝 В блоге пока нет записей или канал является приватным.</div>';
-                    return;
-                }
-
-                container.innerHTML = "";
-
-                const postsArray = Array.from(tgPosts).reverse().slice(0, 15);
-
-                postsArray.forEach(post => {
-                    const textEl = post.querySelector(".tgme_widget_message_text");
-                    const photoEl = post.querySelector(".tgme_widget_message_photo_wrap");
-                    const dateEl = post.querySelector(".tgme_widget_message_date time");
-
-                    if (!textEl && !photoEl) return;
-
-                    const card = document.createElement("article");
-                    card.className = "post-card";
-
-                    let dateStr = "Недавно";
-                    if (dateEl) {
-                        const pubDate = new Date(dateEl.getAttribute("datetime"));
-                        if (!isNaN(pubDate)) {
-                            const formatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-                            dateStr = formatter.format(pubDate);
-                        }
-                    }
-
-                    let imgHtml = "";
-                    if (photoEl) {
-                        const styleAttr = photoEl.getAttribute("style") || "";
-                        const imgUrlMatch = styleAttr.match(/url\(['"]?([^'"]+)['"]?\)/);
-                        if (imgUrlMatch && imgUrlMatch[1]) {
-                            imgHtml = `<img src="${imgUrlMatch[1]}" class="post-img" alt="Иллюстрация к записи" loading="lazy">`;
-                        }
-                    }
-
-                    let textContent = "";
-                    if (textEl) {
-                        let htmlContent = textEl.innerHTML.replace(/<br\s*\/?>/gi, "\n");
-                        const tempDiv = document.createElement("div");
-                        tempDiv.innerHTML = htmlContent;
-                        textContent = tempDiv.textContent || tempDiv.innerText || "";
-                    }
-
-                    card.innerHTML = `
-                        <span class="post-date">📅 ${dateStr}</span>
-                        ${imgHtml}
-                        <p class="post-text">${escapeHtml(textContent.trim())}</p>
-                    `;
-
-                    container.appendChild(card);
-                });
-
-                console.log("🟢 Лента блога успешно обновлена напрямую из первоисточника через Google!");
-
-            } catch (error) {
-                console.error("🔴 Ошибка шлюза Google:", error);
-                container.innerHTML = '<div class="error-msg">😢 Не удалось автоматически обновить ленту. Все свежие записи можно почитать напрямую в Telegram-канале мамы.</div>';
-            }
-        }
-
-        // Встроенный валидатор вывода строк для полной безопасности верстки
-        function escapeHtml(text) {
-            return text
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
-
         // ЗАПУСК СИСТЕМЫ ПРИ ЗАГРУЗКЕ DOM
         document.addEventListener("DOMContentLoaded", () => {
-            initTabs();
-            fetchTelegramPosts();
+            initTabs(); // Оставляем только переключение вкладок, виджет загрузится сам по своим протоколам
         });
     </script>
 </body>
