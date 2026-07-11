@@ -335,57 +335,49 @@
 
         // АВТОНОМНЫЙ АПИ-ПАРАЛЛЕЛЬНЫЙ ЗАГРУЗЧИК ИЗ ТЕЛЕГРАМА
         async function fetchTelegramPosts() {
-            // =========================================================================
-            // КРИТИЧЕСКИЙ НАСТРОЕЧНЫЙ ПУНКТ:
-            // Укажи здесь точный юзернейм публичного Telegram-канала мамы (БЕЗ знака @)
-            // =========================================================================
-            const channelName = "Bagoveeva"; 
+            // ЗАДАЧА: Прописываем точный юзернейм публичного канала мамы (БЕЗ знака @ и БЕЗ ссылки)
+            const channelName = "Bagoveeva"; // ЗАМЕНИТЕ НА СВОЙ ЮЗЕРНЕЙМ
             
             const container = document.getElementById("postsContainer");
             
-            // Используем стабильный публичный мост для конвертации ленты в валидный JSON-формат
-            const rssUrl = `https://rsshub.app{channelName}`;
-            const apiTarget = `https://rss2json.com{encodeURIComponent(rssUrl)}`;
-
-            try {
-                const response = await fetch(apiTarget);
-                if (!response.ok) throw new Error("Сетевой сбой при чтении потока");
-                const data = await response.json();
-
+            // Формируем два независимых шлюза для полной автономии и стабильности сайта
+            const primaryGateway = `https://rss2json.com/${encodeURIComponent('https://tgorg.org/rss/' + channelName)}`;
+            const backupGateway = `https://rss2json.com/${encodeURIComponent('https://rsshub.app/telegram/channel/' + channelName)}`;
+            
+            // Внутренняя функция для обработки и рендеринга данных в элитные карточки
+            function renderTelegramData(data) {
                 if (!data.items || data.items.length === 0) {
                     container.innerHTML = '<div class="error-msg">📝 В блоге пока нет записей или канал является приватным.</div>';
-                    return;
+                    return true;
                 }
 
-                container.innerHTML = ""; // Мгновенно убираем индикатор загрузки
+                container.innerHTML = ""; // Очищаем индикатор загрузки
 
                 data.items.forEach(item => {
                     const card = document.createElement("article");
                     card.className = "post-card";
 
-                    // Форматируем красивую дату публикации по русским стандартам
                     const pubDate = new Date(item.pubDate);
                     const formatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
                     const dateStr = formatter.format(pubDate);
 
                     let rawContent = item.content || item.description || "";
                     
-                    // Поиск изображений (вытягиваем ссылку на первое медиа-вложение из Telegram)
+                    // Вытягиваем картинку поста из медиа-вложений телеграма
                     let imgHtml = "";
                     const imgMatch = rawContent.match(/<img[^>]+src="([^">]+)"/);
                     if (imgMatch && imgMatch[1]) {
                         imgHtml = `<img src="${imgMatch[1]}" class="post-img" alt="Иллюстрация к записи" loading="lazy">`;
                     }
 
-                    // Очищаем текст от тяжелых тегов, видеоплееров и сохраняем переносы строк абзацев
+                    // Полностью вычищаем текст от HTML-тегов, сохраняя переносы строк
                     let textOnly = rawContent
                         .replace(/<img[^>]*>/g, "")
                         .replace(/<video[^>]*>([\s\S]*?)<\/video>/g, "")
                         .replace(/<br\s*\/?>/gi, "\n")
-                        .replace(/<\/?[^>]+(>|$)/g, "") // Стираем любые остаточные HTML-теги
+                        .replace(/<\/?[^>]+(>|$)/g, "")
                         .trim();
 
-                    // Если в посте нет ни медиа, ни текста (например, пустая служебная ссылка), пропускаем его
                     if (!textOnly && !imgHtml) return;
 
                     card.innerHTML = `
@@ -396,10 +388,29 @@
 
                     container.appendChild(card);
                 });
+                return true;
+            }
 
-            } catch (error) {
-                console.error("🔴 Ошибка синхронизации с Telegram:", error);
-                container.innerHTML = '<div class="error-msg">😢 Не удалось автоматически обновить ленту. Все свежие записи можно почитать напрямую в Telegram-канале.</div>';
+            // Запускаем каскадный опрос шлюзов: сначала первый, если он лежит — идем во второй
+            try {
+                console.log("📡 Попытка подключения к основному шлюзу Telegram...");
+                const response = await fetch(primaryGateway);
+                if (!response.ok) throw new Error("Основной шлюз временно недоступен");
+                const data = await response.json();
+                renderTelegramData(data);
+                console.log("🟢 Лента успешно загружена через основной шлюз!");
+            } catch (primaryError) {
+                console.warn("⚠️ Основной шлюз дал сбой, переключаемся на резервный...", primaryError);
+                try {
+                    const response = await fetch(backupGateway);
+                    if (!response.ok) throw new Error("Резервный шлюз тоже недоступен");
+                    const data = await response.json();
+                    renderTelegramData(data);
+                    console.log("🟢 Лента успешно загружена через резервный шлюз!");
+                } catch (backupError) {
+                    console.error("🔴 Тотальный сбой обоих шлюзов сети:", backupError);
+                    container.innerHTML = '<div class="error-msg">😢 Не удалось автоматически обновить ленту. Все свежие записи можно почитать напрямую в Telegram-канале мамы.</div>';
+                }
             }
         }
 
