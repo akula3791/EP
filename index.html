@@ -333,84 +333,98 @@
             });
         }
 
-        // АВТОНОМНЫЙ АПИ-ПАРАЛЛЕЛЬНЫЙ ЗАГРУЗЧИК ИЗ ТЕЛЕГРАМА
+        // АВТОНОМНЫЙ ПАРСЕР ОФИЦИАЛЬНОЙ ВЕБ-ЛЕНТЫ TELEGRAM
         async function fetchTelegramPosts() {
-            // ЗАДАЧА: Прописываем точный юзернейм публичного канала мамы (БЕЗ знака @ и БЕЗ ссылки)
-            const channelName = "https://t.me/Bagoveeva"; // ЗАМЕНИТЕ НА СВОЙ ЮЗЕРНЕЙМ
-            
+            const channelName = "Bagoveeva"; // ЗАМЕНИТЕ НА СВОЙ ЮЗЕРНЕЙМ
             const container = document.getElementById("postsContainer");
             
-            // Формируем два независимых шлюза для полной автономии и стабильности сайта
-            const primaryGateway = `https://rss2json.com/${encodeURIComponent('https://tgorg.org/rss/' + channelName)}`;
-            const backupGateway = `https://rss2json.com/${encodeURIComponent('https://rsshub.app/telegram/channel/' + channelName)}`;
-            
-            // Внутренняя функция для обработки и рендеринга данных в элитные карточки
-            function renderTelegramData(data) {
-                if (!data.items || data.items.length === 0) {
+            // Используем официальную веб-страницу канала через открытый CORS-дешифратор
+            const targetUrl = `https://t.me/${channelName}`;
+            const proxyUrl = `https://allorigins.win/${encodeURIComponent(targetUrl)}`;
+
+            try {
+                console.log("📡 Синхронизация с веб-потоком Telegram...");
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error("Ошибка сети прокси-сервера");
+                
+                const json = await response.json();
+                const htmlText = json.contents;
+
+                // Создаем виртуальный парсер для разбора полученной страницы Telegram
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, "text/html");
+                
+                // Находим все блоки постов на официальной странице Telegram
+                const tgPosts = doc.querySelectorAll(".tgme_widget_message_wrap");
+
+                if (!tgPosts || tgPosts.length === 0) {
                     container.innerHTML = '<div class="error-msg">📝 В блоге пока нет записей или канал является приватным.</div>';
-                    return true;
+                    return;
                 }
 
-                container.innerHTML = ""; // Очищаем индикатор загрузки
+                container.innerHTML = ""; // Мгновенно убираем индикатор загрузки
 
-                data.items.forEach(item => {
+                // Пробегаемся по постам (берем последние 15 записей для скорости)
+                const postsArray = Array.from(tgPosts).reverse().slice(0, 15);
+
+                postsArray.forEach(post => {
+                    // Ищем текст поста
+                    const textEl = post.querySelector(".tgme_widget_message_text");
+                    // Ищем изображение поста (в веб-версии TG они лежат в блоках с фоновым стилем)
+                    const photoEl = post.querySelector(".tgme_widget_message_photo_wrap");
+                    // Ищем дату публикации
+                    const dateEl = post.querySelector(".tgme_widget_message_date time");
+
+                    if (!textEl && !photoEl) return; // Пропускаем пустые служебные сообщения
+
                     const card = document.createElement("article");
                     card.className = "post-card";
 
-                    const pubDate = new Date(item.pubDate);
-                    const formatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-                    const dateStr = formatter.format(pubDate);
-
-                    let rawContent = item.content || item.description || "";
-                    
-                    // Вытягиваем картинку поста из медиа-вложений телеграма
-                    let imgHtml = "";
-                    const imgMatch = rawContent.match(/<img[^>]+src="([^">]+)"/);
-                    if (imgMatch && imgMatch[1]) {
-                        imgHtml = `<img src="${imgMatch[1]}" class="post-img" alt="Иллюстрация к записи" loading="lazy">`;
+                    // Обработка красивой даты
+                    let dateStr = "Недавно";
+                    if (dateEl) {
+                        const pubDate = new Date(dateEl.getAttribute("datetime"));
+                        if (!isNaN(pubDate)) {
+                            const formatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+                            dateStr = formatter.format(pubDate);
+                        }
                     }
 
-                    // Полностью вычищаем текст от HTML-тегов, сохраняя переносы строк
-                    let textOnly = rawContent
-                        .replace(/<img[^>]*>/g, "")
-                        .replace(/<video[^>]*>([\s\S]*?)<\/video>/g, "")
-                        .replace(/<br\s*\/?>/gi, "\n")
-                        .replace(/<\/?[^>]+(>|$)/g, "")
-                        .trim();
+                    // Вытягиваем чистую ссылку на картинку из инлайн-стилей Telegram
+                    let imgHtml = "";
+                    if (photoEl) {
+                        const styleAttr = photoEl.getAttribute("style") || "";
+                        const imgUrlMatch = styleAttr.match(/url\(['"]?([^'"]+)['"]?\)/);
+                        if (imgUrlMatch && imgUrlMatch[1]) {
+                            imgHtml = `<img src="${imgUrlMatch[1]}" class="post-img" alt="Иллюстрация к записи" loading="lazy">`;
+                        }
+                    }
 
-                    if (!textOnly && !imgHtml) return;
+                    // Забираем чистый текст, сохраняя оригинальные абзацы мамы
+                    let textContent = "";
+                    if (textEl) {
+                        // Заменяем теги переноса строки, чтобы текст не слипался
+                        let htmlContent = textEl.innerHTML.replace(/<br\s*\/?>/gi, "\n");
+                        // Создаем временный элемент для очистки от остальных HTML-тегов
+                        const tempDiv = document.createElement("div");
+                        tempDiv.innerHTML = htmlContent;
+                        textContent = tempDiv.textContent || tempDiv.innerText || "";
+                    }
 
                     card.innerHTML = `
                         <span class="post-date">📅 ${dateStr}</span>
                         ${imgHtml}
-                        <p class="post-text">${escapeHtml(textOnly)}</p>
+                        <p class="post-text">${escapeHtml(textContent.trim())}</p>
                     `;
 
                     container.appendChild(card);
                 });
-                return true;
-            }
 
-            // Запускаем каскадный опрос шлюзов: сначала первый, если он лежит — идем во второй
-            try {
-                console.log("📡 Попытка подключения к основному шлюзу Telegram...");
-                const response = await fetch(primaryGateway);
-                if (!response.ok) throw new Error("Основной шлюз временно недоступен");
-                const data = await response.json();
-                renderTelegramData(data);
-                console.log("🟢 Лента успешно загружена через основной шлюз!");
-            } catch (primaryError) {
-                console.warn("⚠️ Основной шлюз дал сбой, переключаемся на резервный...", primaryError);
-                try {
-                    const response = await fetch(backupGateway);
-                    if (!response.ok) throw new Error("Резервный шлюз тоже недоступен");
-                    const data = await response.json();
-                    renderTelegramData(data);
-                    console.log("🟢 Лента успешно загружена через резервный шлюз!");
-                } catch (backupError) {
-                    console.error("🔴 Тотальный сбой обоих шлюзов сети:", backupError);
-                    container.innerHTML = '<div class="error-msg">😢 Не удалось автоматически обновить ленту. Все свежие записи можно почитать напрямую в Telegram-канале мамы.</div>';
-                }
+                console.log("🟢 Лента блога успешно обновлена напрямую из Telegram!");
+
+            } catch (error) {
+                console.error("🔴 Ошибка парсинга ленты:", error);
+                container.innerHTML = '<div class="error-msg">😢 Не удалось автоматически обновить ленту. Все свежие записи можно почитать напрямую в Telegram-канале мамы.</div>';
             }
         }
 
